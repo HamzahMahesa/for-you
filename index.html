@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Custom Space Gesture Controller with Music</title>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background-color: #000;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      }
+      #canvas-container {
+        position: absolute;
+        bottom: 20px;
+        left: 20px;
+        width: 180px;
+        height: 135px;
+        border: 2px solid #555;
+        border-radius: 8px;
+        z-index: 10;
+        overflow: hidden;
+        background: #111;
+        display: none;
+      }
+      #webcam {
+        width: 100%;
+        height: 100%;
+        transform: scaleX(-1);
+        object-fit: cover;
+        display: block;
+      }
+      #output_canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        transform: scaleX(-1);
+        z-index: 11;
+        pointer-events: none;
+      }
+      #ui-container {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        z-index: 10;
+        color: white;
+        pointer-events: none;
+        display: none;
+      }
+      h1 {
+        margin: 0 0 5px 0;
+        font-size: 20px;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+      }
+      #mode-label {
+        font-size: 24px;
+        font-weight: bold;
+        color: #00ffff;
+        text-shadow: 0 2px 8px rgba(0, 255, 255, 0.6);
+      }
+      #start-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: radial-gradient(circle, #111122 0%, #000000 100%);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 100;
+        color: white;
+        transition: opacity 0.8s ease;
+      }
+      #start-button {
+        padding: 15px 40px;
+        font-size: 18px;
+        font-weight: bold;
+        color: #00ffff;
+        background: transparent;
+        border: 2px solid #00ffff;
+        border-radius: 30px;
+        cursor: pointer;
+        box-shadow: 0 0 15px rgba(0, 255, 255, 0.4);
+        transition: all 0.3s ease;
+      }
+      #start-button:hover {
+        background: #00ffff;
+        color: black;
+        box-shadow: 0 0 25px rgba(0, 255, 255, 0.8);
+        transform: scale(1.05);
+      }
+      #start-subtitle {
+        margin-top: 15px;
+        font-size: 14px;
+        color: #888;
+      }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  </head>
+  <body>
+    <div id="start-overlay">
+      <h2 style="margin-bottom: 5px; font-weight: 400; letter-spacing: 2px">NEBULA HEART CONTROLLER</h2>
+      <p style="color: #ff007f; margin-bottom: 30px; font-size: 14px">🎵 Playing: One Less Lonely Girl (Rap Part)</p>
+      <button id="start-button" onclick="mulaiPetualangan()">Mulai Petualangan Kosmos</button>
+      <div id="start-subtitle">Mengaktifkan Sensor Kamera & Audio Musik</div>
+    </div>
+
+    <div id="ui-container">
+      <h1>Hand Sensor Monitor</h1>
+      <div id="mode-label">MODE: KOSMOS (Buka Tangan) - BIRU</div>
+    </div>
+
+    <div id="canvas-container">
+      <video id="webcam" autoplay playsinline muted></video>
+      <canvas id="output_canvas"></canvas>
+    </div>
+
+    <audio id="bgm" loop>
+      <source src="justin.mp3" type="audio/mpeg" />
+    </audio>
+
+    <script>
+      const NUM_PARTICLES = 1500;
+      let scene, camera, renderer, particleGeometry, particlePoints;
+      let currentPositions, colorsArray;
+      let currentMode = 1;
+      let rotationAngle = 0;
+      let isProgramRunning = false;
+
+      let shapes = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
+
+      const modeLabels = {
+        1: "KOSMOS (Buka Tangan) - BIRU",
+        2: "SATURNUS (1 Jari) - ORANGE",
+        3: "BENTUK 'I' (2 Jari) - KUNING",
+        4: "TULISAN 'YOU' (3 Jari) - HIJAU",
+        5: "TULISAN 'sarah' (4 Jari) - TOSCA",
+        6: "HATI (Mengepal) - PINK",
+      };
+
+      function mulaiPetualangan() {
+        const overlay = document.getElementById("start-overlay");
+        const audio = document.getElementById("bgm");
+
+        overlay.style.opacity = 0;
+        setTimeout(() => {
+          overlay.style.display = "none";
+        }, 800);
+
+        audio.volume = 0.4;
+
+        // Skip langsung ke bagian Rap / Bridge (Menit 2:12 = 132 detik)
+        // Jika file download kamu durasinya sedikit berbeda, ganti angka 132 ini
+        audio.currentTime = 132;
+
+        audio.play().catch((e) => console.log("Gagal memutar audio otomatis:", e));
+
+        document.getElementById("ui-container").style.display = "block";
+        document.getElementById("canvas-container").style.display = "block";
+
+        isProgramRunning = true;
+        initGraphics();
+        initAI();
+      }
+
+      // ==========================================
+      // GENERASI DATA BENTUK 3D
+      // ==========================================
+      function initShapes() {
+        // Mode 1: Kosmos
+        for (let i = 0; i < NUM_PARTICLES; i++) {
+          shapes[1].push((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8);
+        }
+
+        // Mode 2: Saturnus Besar
+        const NUM_SPHERE = 700;
+        for (let i = 0; i < NUM_PARTICLES; i++) {
+          if (i < NUM_SPHERE) {
+            let phi = Math.random() * Math.PI * 2;
+            let costheta = Math.random() * 2 - 1;
+            let theta = Math.acos(costheta);
+            let r = 1.6;
+            shapes[2].push(r * Math.sin(theta) * Math.cos(phi), r * Math.sin(theta) * Math.sin(phi), r * Math.cos(theta));
+          } else {
+            let theta = Math.random() * Math.PI * 2;
+            let r = 2.2 + Math.random() * 2.5;
+            shapes[2].push(r * Math.cos(theta), (Math.random() - 0.5) * 0.05, r * Math.sin(theta));
+          }
+        }
+
+        // Mode 3, 4, 5: Teks Skala Besar tetap stabil menghadap depan
+        shapes[3] = generateTextCoords("I", 7.0, 35.0);
+        shapes[4] = generateTextCoords("YOU", 6.0, 42.0);
+        shapes[5] = generateTextCoords("sarah", 5.5, 45.0);
+
+        // Mode 6: Hati / Love
+        for (let i = 0; i < NUM_PARTICLES; i++) {
+          let t = (Math.random() * 2 - 1) * Math.PI;
+          let p = (Math.random() * 2 - 1) * Math.PI;
+          let x = 2.0 * Math.pow(Math.sin(t), 3);
+          let y = 2.0 * Math.cos(t) - 0.7 * Math.cos(2 * t) - 0.3 * Math.cos(3 * t) - 0.1 * Math.cos(4 * t);
+          let z = Math.sin(p) * 0.4;
+          shapes[6].push(x * 1.0, y * 1.0 + 0.3, z);
+        }
+      }
+
+      function generateTextCoords(text, scaleFactor, divFactor) {
+        let canvas = document.createElement("canvas");
+        canvas.width = 700;
+        canvas.height = 300;
+        let ctx = canvas.getContext("2d");
+        ctx.fillStyle = "black";
+        ctx.fillRect(0, 0, 700, 300);
+        ctx.fillStyle = "white";
+        ctx.font = `bold ${scaleFactor * 24}px Arial`;
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+        ctx.fillText(text, 50, 50);
+
+        let imgData = ctx.getImageData(0, 0, 700, 300).data;
+        let temporaryPoints = [];
+        let sumX = 0,
+          sumY = 0,
+          count = 0;
+
+        for (let y = 0; y < 300; y++) {
+          for (let x = 0; x < 700; x++) {
+            if (imgData[(y * 700 + x) * 4 + 0] > 128) {
+              temporaryPoints.push({ x: x, y: y });
+              sumX += x;
+              sumY += y;
+              count++;
+            }
+          }
+        }
+
+        let out = [];
+        if (count === 0) {
+          for (let i = 0; i < NUM_PARTICLES; i++) out.push(0, 0, 0);
+          return out;
+        }
+
+        let meanX = sumX / count;
+        let meanY = sumY / count;
+
+        for (let i = 0; i < NUM_PARTICLES; i++) {
+          let target = temporaryPoints[Math.floor(Math.random() * temporaryPoints.length)];
+          let finalX = (target.x - meanX) / divFactor;
+          let finalY = -(target.y - meanY) / divFactor;
+          out.push(finalX, finalY, (Math.random() - 0.5) * 0.1);
+        }
+        return out;
+      }
+
+      // ==========================================
+      // ENGINE GRAFIS THREE.JS
+      // ==========================================
+      function initGraphics() {
+        scene = new THREE.Scene();
+        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 50);
+        camera.position.z = 12;
+
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        initShapes();
+
+        particleGeometry = new THREE.BufferGeometry();
+        currentPositions = new Float32Array(shapes[1]);
+        colorsArray = new Float32Array(NUM_PARTICLES * 3);
+
+        particleGeometry.setAttribute("position", new THREE.BufferAttribute(currentPositions, 3));
+        particleGeometry.setAttribute("color", new THREE.BufferAttribute(colorsArray, 3));
+
+        updateColors(1);
+
+        const material = new THREE.PointsMaterial({
+          size: 0.14,
+          vertexColors: true,
+          transparent: true,
+          opacity: 0.85,
+          blending: THREE.AdditiveBlending,
+        });
+
+        particlePoints = new THREE.Points(particleGeometry, material);
+        scene.add(particlePoints);
+
+        window.addEventListener("resize", onWindowResize);
+        animate();
+      }
+
+      function updateColors(mode) {
+        const colors = particleGeometry.attributes.color.array;
+        for (let i = 0; i < NUM_PARTICLES; i++) {
+          let r = 0,
+            g = 0,
+            b = 0;
+          if (mode === 1) {
+            r = 0.1;
+            g = 0.5;
+            b = 1.0;
+          } else if (mode === 2) {
+            if (i < 700) {
+              r = 1.0;
+              g = 0.4;
+              b = 0.0;
+            } else {
+              r = 1.0;
+              g = 0.6;
+              b = 0.1;
+            }
+          } else if (mode === 3) {
+            r = 1.0;
+            g = 1.0;
+            b = 0.0;
+          } else if (mode === 4) {
+            r = 0.0;
+            g = 1.0;
+            b = 0.0;
+          } else if (mode === 5) {
+            r = 0.0;
+            g = 1.0;
+            b = 0.8;
+          } else if (mode === 6) {
+            r = 1.0;
+            g = 0.2;
+            b = 0.5;
+          }
+
+          colors[i * 3] = r;
+          colors[i * 3 + 1] = g;
+          colors[i * 3 + 2] = b;
+        }
+        particleGeometry.attributes.color.needsUpdate = true;
+      }
+
+      let targetX = 0,
+        targetY = 0;
+      function animate() {
+        if (!isProgramRunning) return;
+        requestAnimationFrame(animate);
+
+        const pos = particleGeometry.attributes.position.array;
+        const target = shapes[currentMode];
+        for (let i = 0; i < NUM_PARTICLES * 3; i++) {
+          pos[i] += (target[i] - pos[i]) * 0.12;
+        }
+        particleGeometry.attributes.position.needsUpdate = true;
+
+        // =======================================================
+        // SISTEM ROTASI KONTROL (Teks I, YOU, sarah DIKUNCI DIAM)
+        // =======================================================
+        if (currentMode === 1) {
+          rotationAngle += 0.008;
+        } else if (currentMode === 2) {
+          rotationAngle += 0.025;
+        } else if (currentMode === 6) {
+          rotationAngle += 0.02;
+        } else {
+          // Mode 3, 4, 5 (Teks) perlahan dikembalikan ke sudut 0 derajat agar tidak berputar
+          rotationAngle += (0 - rotationAngle) * 0.1;
+        }
+
+        particlePoints.rotation.y = rotationAngle;
+
+        if (currentMode === 2) {
+          particlePoints.rotation.x = 0.4;
+          particlePoints.rotation.z = 0.2;
+        } else {
+          particlePoints.rotation.x += (0 - particlePoints.rotation.x) * 0.1;
+          particlePoints.rotation.z += (0 - particlePoints.rotation.z) * 0.1;
+        }
+
+        particlePoints.position.x += (targetX - particlePoints.position.x) * 0.15;
+        particlePoints.position.y += (targetY - particlePoints.position.y) * 0.15;
+
+        renderer.render(scene, camera);
+      }
+
+      function onWindowResize() {
+        if (!isProgramRunning) return;
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+
+      // ==========================================
+      // DETEKSI HANDS BERBASIS CDN STABIL
+      // ==========================================
+      function initAI() {
+        const videoElement = document.getElementById("webcam");
+        const canvasElement = document.getElementById("output_canvas");
+        const canvasCtx = canvasElement.getContext("2d");
+
+        const hands = new Hands({
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+        });
+
+        hands.setOptions({
+          maxNumHands: 1,
+          modelComplexity: 1,
+          minDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.5,
+        });
+
+        hands.onResults((results) => {
+          canvasElement.width = videoElement.videoWidth;
+          canvasElement.height = videoElement.videoHeight;
+          canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+          if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            const lm = results.multiHandLandmarks[0];
+
+            for (let i = 0; i < lm.length; i++) {
+              canvasCtx.beginPath();
+              canvasCtx.arc(lm[i].x * canvasElement.width, lm[i].y * canvasElement.height, 3, 0, 2 * Math.PI);
+              canvasCtx.fillStyle = "#00ff00";
+              canvasCtx.fill();
+            }
+
+            let tips = [8, 12, 16, 20];
+            let pips = [6, 10, 14, 18];
+            let jariBerdiri = tips.map((t, idx) => lm[t].y < lm[pips[idx]].y);
+
+            let jempolBerdiri = Math.abs(lm[4].x - lm[0].x) > Math.abs(lm[3].x - lm[0].x);
+            let totalJari = jariBerdiri.filter(Boolean).length + (jempolBerdiri ? 1 : 0);
+            let sumJariUtama = jariBerdiri.filter(Boolean).length;
+
+            let newMode = 1;
+            if (sumJariUtama === 0) newMode = 6;
+            else if (totalJari === 1) newMode = 2;
+            else if (totalJari === 2) newMode = 3;
+            else if (totalJari === 3) newMode = 4;
+            else if (totalJari === 4) newMode = 5;
+            else if (totalJari >= 5) newMode = 1;
+
+            if (newMode !== currentMode) {
+              currentMode = newMode;
+              document.getElementById("mode-label").innerText = `MODE: ${modeLabels[currentMode]}`;
+              updateColors(currentMode);
+            }
+
+            targetX = -(lm[0].x - 0.5) * 8.0;
+            targetY = -(lm[0].y - 0.5) * 5.0;
+          }
+        });
+
+        const cameraUtils = new Camera(videoElement, {
+          onFrame: async () => {
+            await hands.send({ image: videoElement });
+          },
+          width: 640,
+          height: 480,
+        });
+
+        cameraUtils.start().catch((err) => {
+          alert("Gagal mengakses kamera: " + err);
+        });
+      }
+    </script>
+  </body>
+</html>
